@@ -26,6 +26,7 @@ const App = () => {
   const [treeName] = useState('myTree');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [openNodes, setOpenNodes] = useState(new Set());
 
   useEffect(() => {
     fetchTree();
@@ -40,7 +41,7 @@ const App = () => {
         params: { treeName }
       });
       const nodesWithState = response.data.children || [];
-      setNodes(nodesWithState.map(node => ({ ...node, isOpen: false })));
+      setNodes(nodesWithState.map(node => ({ ...node, isOpen: openNodes.has(node.id) })));
       setLoading(false);
 
       if (nodesWithState.length === 0) {
@@ -98,7 +99,14 @@ const App = () => {
       axios.post(`${BASE_URL}/api.user.tree.node.delete`, null, {
         params: { treeName, nodeId }
       })
-        .then(fetchTree)
+        .then(() => {
+          fetchTree();
+          setOpenNodes(prevOpenNodes => {
+            const newOpenNodes = new Set(prevOpenNodes);
+            newOpenNodes.delete(nodeId);
+            return newOpenNodes;
+          });
+        })
         .catch(err => {
           console.error(err);
           setError("Ошибка удаления узла");
@@ -108,24 +116,33 @@ const App = () => {
   };
 
   const toggleExpand = (nodeId) => {
-    setNodes(nodes.map(node => {
-      if (node.id === nodeId) {
-        return { ...node, isOpen: !node.isOpen };
+    setOpenNodes(prevOpenNodes => {
+      const newOpenNodes = new Set(prevOpenNodes);
+      if (newOpenNodes.has(nodeId)) {
+        newOpenNodes.delete(nodeId);
+      } else {
+        newOpenNodes.add(nodeId);
       }
-      if (node.children) {
-        return { ...node, children: toggleChildrenExpand(node.children, nodeId) };
-      }
-      return node;
-    }));
+      setNodes(nodes.map(node => {
+        if (node.id === nodeId) {
+          return { ...node, isOpen: newOpenNodes.has(nodeId) };
+        }
+        if (node.children) {
+          return { ...node, children: toggleChildrenExpand(node.children, nodeId, newOpenNodes) };
+        }
+        return node;
+      }));
+      return newOpenNodes;
+    });
   };
 
-  const toggleChildrenExpand = (children, nodeId) => {
+  const toggleChildrenExpand = (children, nodeId, openNodes) => {
     return children.map(child => {
       if (child.id === nodeId) {
-        return { ...child, isOpen: !child.isOpen };
+        return { ...child, isOpen: openNodes.has(nodeId) };
       }
       if (child.children) {
-        return { ...child, children: toggleChildrenExpand(child.children, nodeId) };
+        return { ...child, children: toggleChildrenExpand(child.children, nodeId, openNodes) };
       }
       return child;
     });
@@ -151,6 +168,7 @@ const App = () => {
             onDelete={handleDeleteNode}
             onToggle={toggleExpand}
             onExpand={toggleExpand}
+            openNodes={openNodes}
           />
         ))}
       </List>
